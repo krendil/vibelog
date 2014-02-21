@@ -54,17 +54,6 @@ block body
 								input(type="hidden", name="author", value="#{loginUser.username}")
 					tr
 						td
-							label(for="category") Category
-						td
-							select#category(name="category", size="1")
-								- foreach( cat; globalConfig.categories )
-									- if( loginUser.isPostAdmin() || loginUser.mayPostInCategory(cat) )
-										- if( post && cat == post.category )
-											option(value="#{cat}", selected)= cat
-										- else
-											option(value="#{cat}")= cat
-					tr
-						td
 							label(for="date") Date
 						td
 							input#date(type="text", name="date", value="#{post ? post.date.toSimpleString() : Clock.currTime().toSimpleString()}")

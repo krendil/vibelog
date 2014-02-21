@@ -20,34 +20,27 @@ class VibeLogSettings {
 	string databaseHost = "localhost";
 	ushort databasePort = MongoConnection.defaultPort;
 	string databaseName = "vibelog";
-	string configName = "default";
 	int postsPerPage = 4;
 	URL siteUrl = URL.parse("http://localhost:8080/");
 	string function(string)[] textFilters;
 }
 
-void registerVibeLog(VibeLogSettings settings, URLRouter router)
+void registerVibeLog(alias config)(VibeLogSettings settings, URLRouter router)
 {
-	new VibeLog(settings, router);
+	new VibeLog!config(settings, router);
 }
 
-class VibeLog {
+class VibeLog(alias config) {
 	private {
 		DBController m_db;
 		string m_subPath;
 		VibeLogSettings m_settings;
-		Config m_config;
 	}
 
 	this(VibeLogSettings settings, URLRouter router)
 	{
 		m_settings = settings;
 		m_db = new DBController(settings.databaseHost, settings.databasePort, settings.databaseName);
-		try m_config = m_db.getConfig(settings.configName, true);
-		catch( Exception e ){
-			logError("ERR: %s", e);
-			throw e;
-		}
 
 		m_subPath = settings.siteUrl.path.toString();
 
@@ -61,7 +54,6 @@ class VibeLog {
 		router.get(m_subPath, &showPostList);
 		router.get(m_subPath ~ "posts/:postname", &showPost);
 		router.post(m_subPath ~ "posts/:postname/post_comment", &postComment);
-		router.get(m_subPath ~ "feed/rss", &rssFeed);
 		router.post(m_subPath ~ "markup", &markup);
 
 		router.get(m_subPath ~ "sitemap.xml", &sitemap);
@@ -70,11 +62,6 @@ class VibeLog {
 		// restricted pages
 		//
 		router.get(m_subPath ~ "manage",                      auth(&showAdminPanel));
-
-		router.get(m_subPath ~ "configs/",                    auth(&showConfigList));
-		router.get(m_subPath ~ "configs/:configname/edit",    auth(&showConfigEdit));
-		router.post(m_subPath ~ "configs/:configname/put",    auth(&putConfig));
-		router.post(m_subPath ~ "configs/:configname/delete", auth(&deleteConfig));
 
 		router.get(m_subPath ~ "users/",                      auth(&showUserList));
 		router.get(m_subPath ~ "users/:username/edit",        auth(&showUserEdit));
@@ -93,7 +80,7 @@ class VibeLog {
 
 	int getPageCount()
 	{
-		int cnt = m_db.countPostsForCategory(m_config.categories);
+		int cnt = m_db.countAllPosts();
 		return (cnt + m_settings.postsPerPage - 1) / m_settings.postsPerPage;
 	}
 
@@ -102,7 +89,7 @@ class VibeLog {
 		Post[] ret;
 		try {
 			size_t cnt = 0;
-			m_db.getPublicPostsForCategory(m_config.categories, n*m_settings.postsPerPage, (size_t i, Post p){
+			m_db.getPublicPosts(n*m_settings.postsPerPage, (size_t i, Post p){
 				ret ~= p;
 				if( ++cnt >= m_settings.postsPerPage )
 					return false;
@@ -120,7 +107,7 @@ class VibeLog {
 	Post[] getRecentPosts()
 	{
 		Post[] ret;
-		m_db.getPublicPostsForCategory(m_config.categories, 0, (i, p){
+		m_db.getPublicPosts(0, (i, p){
 			if( i > 20 ) return false;
 			ret ~= p;
 			return true;
@@ -163,8 +150,9 @@ class VibeLog {
 		//res.render!("vibelog.postlist.dt", req, posts, pageNumber, pageCount)(res.bodyWriter);
 		res.renderCompat!("vibelog.postlist.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			ShowPostListInfo*, "info")
-			(req, &info);
+			(req, config, &info);
 	}
 
 	protected void showPost(HTTPServerRequest req, HTTPServerResponse res)
@@ -190,8 +178,9 @@ class VibeLog {
 		//res.render!("vibelog.post.dt", req, users, post, textFilters);
 		res.renderCompat!("vibelog.post.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			ShowPostInfo*, "info")
-			(req, &info);
+			(req, config, &info);
 	}
 
 	protected void postComment(HTTPServerRequest req, HTTPServerResponse res)
@@ -214,37 +203,6 @@ class VibeLog {
 		res.redirect(m_subPath ~ "posts/"~post.name);
 	}
 
-	protected void rssFeed(HTTPServerRequest req, HTTPServerResponse res)
-	{
-		auto ch = new RssChannel;
-		ch.title = m_config.feedTitle;
-		ch.link = m_config.feedLink;
-		ch.description = m_config.feedDescription;
-		ch.copyright = m_config.copyrightString;
-		ch.pubDate = Clock.currTime(UTC());
-		ch.imageTitle = m_config.feedImageTitle;
-		ch.imageUrl = m_config.feedImageUrl;
-		ch.imageLink = m_config.feedLink;
-
-		m_db.getPostsForCategory(m_config.categories, 0, (size_t i, Post p){
-				if( !p.isPublic ) return true;
-				auto itm = new RssEntry;
-				itm.title = p.header;
-				itm.description = p.subHeader;
-				itm.link = m_settings.siteUrl.toString() ~ "posts/" ~ p.name;
-				itm.author = p.author;
-				itm.guid = "xxyyzz";
-				itm.pubDate = p.date;
-				ch.entries ~= itm;
-				return i < 10;
-			});
-
-		auto feed = new RssFeed;
-		feed.channels ~= ch;
-
-		res.headers["Content-Type"] = "application/rss+xml";
-		feed.render(res.bodyWriter);
-	}
 
 	protected void markup(HTTPServerRequest req, HTTPServerResponse res)
 	{
@@ -269,11 +227,6 @@ class VibeLog {
 		// home page
 		writeEntry();
 
-		m_db.getPostsForCategory(m_config.categories, 0, (size_t i, Post p){
-				if( p.isPublic ) writeEntry("posts/", p.name);
-				return true;
-			});
-		
 		res.bodyWriter.write("</urlset>\n");
 		res.bodyWriter.flush();
 	}
@@ -300,73 +253,11 @@ class VibeLog {
 	{
 		res.renderCompat!("vibelog.admin.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User[string], "users",
 			User, "loginUser")
-			(req, users, loginUser);
+			(req, config, users, loginUser);
 	}
-
-	//
-	// Configs
-	//
-
-	protected void showConfigList(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		enforce(loginUser.isConfigAdmin());
-		Config[] configs = m_db.getAllConfigs();
-		res.renderCompat!("vibelog.editconfiglist.dt",
-			HTTPServerRequest, "req",
-			User, "loginUser",
-			Config[], "configs")
-			(req, loginUser, configs);
-	}
-
-	protected void showConfigEdit(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		auto globalConfig = m_db.getConfig("global", true);
-		enforce(loginUser.isConfigAdmin());
-		Config config = m_db.getConfig(req.params["configname"]);
-		res.renderCompat!("vibelog.editconfig.dt",
-			HTTPServerRequest, "req",
-			User, "loginUser",
-			Config, "globalConfig",
-			Config, "config")
-			(req, loginUser, globalConfig, config);
-	}
-
-	protected void putConfig(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		enforce(loginUser.isConfigAdmin());
-		Config cfg = m_db.getConfig(req.params["configname"]);
-		if( cfg.name == "global" )
-			cfg.categories = req.form["categories"].splitLines();
-		else {
-			cfg.categories = null;
-			foreach( k, v; req.form ){
-				if( k.startsWith("category_") )
-					cfg.categories ~= k[9 .. $];
-			}
-		}
-		cfg.language = req.form["language"];
-		cfg.copyrightString = req.form["copyrightString"];
-		cfg.feedTitle = req.form["feedTitle"];
-		cfg.feedLink = req.form["feedLink"];
-		cfg.feedDescription = req.form["feedDescription"];
-		cfg.feedImageTitle = req.form["feedImageTitle"];
-		cfg.feedImageUrl = req.form["feedImageUrl"];
-	
-		m_db.setConfig(cfg);
-
-		m_config = cfg;
-		res.redirect(m_subPath ~ "configs/");
-	}
-
-	protected void deleteConfig(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		enforce(loginUser.isConfigAdmin());
-		m_db.deleteConfig(req.params["configname"]);
-		res.redirect(m_subPath ~ "configs/");
-	}
-
 
 	//
 	// Users
@@ -376,21 +267,21 @@ class VibeLog {
 	{
 		res.renderCompat!("vibelog.edituserlist.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User, "loginUser",
 			User[string], "users")
-			(req, loginUser, users);
+			(req, config, loginUser, users);
 	}
 
 	protected void showUserEdit(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
 	{
-		auto globalConfig = m_db.getConfig("global", true);
 		User user = m_db.getUser(req.params["username"]);
 		res.renderCompat!("vibelog.edituser.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User, "loginUser",
-			Config, "globalConfig",
 			User, "user")
-			(req, loginUser, globalConfig, user);
+			(req, config, loginUser, user);
 	}
 
 	protected void putUser(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
@@ -424,12 +315,6 @@ class VibeLog {
 			foreach( k, v; req.form ){
 				if( k.startsWith("group_") )
 					usr.groups ~= k[6 .. $];
-			}
-
-			usr.allowedCategories = null;
-			foreach( k, v; req.form ){
-				if( k.startsWith("category_") )
-					usr.allowedCategories ~= k[9 .. $];
 			}
 		}
 
@@ -476,8 +361,7 @@ class VibeLog {
 	{
 		Post[] posts;
 		m_db.getAllPosts(0, (size_t idx, Post post){
-			if( loginUser.isPostAdmin() || post.author == loginUser.username
-				|| loginUser.mayPostInCategory(post.category) )
+			if( loginUser.isPostAdmin() || post.author == loginUser.username )
 			{
 				posts ~= post;
 			}
@@ -487,40 +371,39 @@ class VibeLog {
 		//parseJadeFile!("vibelog.postlist.dt", req, posts, pageNumber, pageCount)(res.bodyWriter);
 		res.renderCompat!("vibelog.editpostslist.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User[string], "users",
 			User, "loginUser",
 			Post[], "posts")
-			(req, users, loginUser, posts);
+			(req, config, users, loginUser, posts);
 	}
 
 	protected void showMakePost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
 	{
-		auto globalConfig = m_db.getConfig("global", true);
 		Post post;
 		Comment[] comments;
 		res.renderCompat!("vibelog.editpost.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User[string], "users",
 			User, "loginUser",
-			Config, "globalConfig",
 			Post, "post",
 			Comment[], "comments")
-			(req, users, loginUser, globalConfig, post, comments);
+			(req, config, users, loginUser, post, comments);
 	}
 
 	protected void showEditPost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
 	{
-		auto globalConfig = m_db.getConfig("global", true);
 		auto post = m_db.getPost(req.params["postname"]);
 		auto comments = m_db.getComments(post.id, true);
 		res.renderCompat!("vibelog.editpost.dt",
 			HTTPServerRequest, "req",
+            typeof(config), "config",
 			User[string], "users",
 			User, "loginUser",
-			Config, "globalConfig",
 			Post, "post",
 			Comment[], "comments")
-			(req, users, loginUser, globalConfig, post, comments);
+			(req, config, users, loginUser, post, comments);
 	}
 
 	protected void deletePost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
@@ -546,16 +429,13 @@ class VibeLog {
 			enforce(req.params["postname"] == p.name, "URL does not match the edited post!");
 		} else {
 			p = new Post;
-			p.category = "default";
 			p.date = Clock.currTime().toUTC();
 		}
-		enforce(loginUser.mayPostInCategory(req.form["category"]), "You are now allowed to post in the '"~req.form["category"]~"' category.");
 
 		p.isPublic = ("isPublic" in req.form) !is null;
 		p.commentsAllowed = ("commentsAllowed" in req.form) !is null;
 		p.author = req.form["author"];
 		p.date = SysTime.fromSimpleString(req.form["date"]);
-		p.category = req.form["category"];
 		p.slug = req.form["slug"].length ? req.form["slug"] : makeSlugFromHeader(req.form["header"]);
 		p.headerImage = req.form["headerImage"];
 		p.header = req.form["header"];

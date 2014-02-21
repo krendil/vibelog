@@ -37,13 +37,6 @@ class User {
 	bool isConfigAdmin() const { return inGroup("admin"); }
 	bool isUserAdmin() const { return inGroup("admin"); }
 	bool isPostAdmin() const { return inGroup("admin"); }
-	bool mayPostInCategory(string category){
-		if( isPostAdmin() ) return true;
-		foreach( c; allowedCategories )
-			if( c == category )
-				return true;
-		return false;
-	}
 
 	static User fromBson(Bson bson)
 	{

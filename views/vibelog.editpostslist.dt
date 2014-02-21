@@ -19,7 +19,6 @@ block body
 				th Pub
 				th Header
 				th Author
-				th Category
 				th View
 				th Edit
 				th Delete
@@ -30,7 +29,6 @@ block body
 						td= post.isPublic ? "yes" : ""
 						td= post.header
 						td= post.author
-						td= post.category
 						td
 							form(action="#{post.name}", method="GET")
 								input(type="submit", value="view")

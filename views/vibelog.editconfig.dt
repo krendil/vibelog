@@ -11,22 +11,6 @@ block body
 			a(href="../") Back to config list
 			
 		form(action="put", method="POST")
-			- if( config.name == "global" )
-				p
-					label(for="categories") Categories
-					br
-					textarea(name="categories", rows="10", cols="40")= join(config.categories, "\n")
-			- else
-				p Categories
-				p
-					- foreach( grp; globalConfig.categories )
-						- if( config.hasCategory(grp) )
-							input(type="checkbox", name="category_#{grp}", value="1", checked)
-						- else
-							input(type="checkbox", name="category_#{grp}", value="1")
-						label(for="category_#{grp}")= grp
-						br
-
 			p
 				label(for="language") Language
 				input(type="text", name="language", value="#{config.language}")

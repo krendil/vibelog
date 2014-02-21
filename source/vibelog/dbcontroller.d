@@ -1,6 +1,5 @@
 module vibelog.dbcontroller;
 
-public import vibelog.config;
 public import vibelog.post;
 public import vibelog.user;
 
@@ -18,7 +17,6 @@ import std.variant;
 
 class DBController {
 	private {
-		MongoCollection m_configs;
 		MongoCollection m_users;
 		MongoCollection m_posts;
 		MongoCollection m_comments;
@@ -27,7 +25,6 @@ class DBController {
 	this(string host, ushort port, string dbname)
 	{
 		auto db = connectMongoDB(host, port).getDatabase(dbname);
-		m_configs = db["configs"];
 		m_users = db["users"];
 		m_posts = db["posts"];
 		m_comments = db["comments"];
@@ -41,40 +38,6 @@ class DBController {
 			}
 			m_posts.update(["_id": p._id], ["$unset": ["comments": 1]]);
 		}
-	}
-
-	Config getConfig(string name, bool createdefault = false)
-	{
-		auto configbson = m_configs.findOne(["name": Bson(name)]);
-		if( !configbson.isNull() )
-			return Config.fromBson(configbson);
-		enforce(createdefault, "Configuration does not exist.");
-		auto cfg = new Config;
-		cfg.name = name;
-		m_configs.insert(cfg.toBson());
-		return cfg;
-	}
-
-	void setConfig(Config cfg)
-	{
-		Bson update = cfg.toBson();
-		m_configs.update(["name": Bson(cfg.name)], update);
-	}
-
-	void deleteConfig(string name)
-	{
-		m_configs.remove(["name": Bson(name)]);
-	}
-
-	Config[] getAllConfigs()
-	{
-		Bson[string] query;
-		Config[] ret;
-		foreach( config; m_configs.find(query) ){
-			auto c = Config.fromBson(config);
-			ret ~= c;
-		}
-		return ret;
 	}
 
 	User[string] getAllUsers()
@@ -138,36 +101,21 @@ class DBController {
 		m_users.remove(["_id": Bson(id)]);
 	}
 
-	int countPostsForCategory(string[] categories)
-	{
-		int cnt;
-		getPostsForCategory(categories, 0, (size_t, Post p){ if( p.isPublic ) cnt++; return true; });
-		return cnt;
-	}
 
-	void getPostsForCategory(string[] categories, int nskip, bool delegate(size_t idx, Post post) del)
+	void getPublicPosts(int nskip, bool delegate(size_t idx, Post post) del)
 	{
-		auto cats = new Bson[categories.length];
-		foreach( i; 0 .. categories.length ) cats[i] = Bson(categories[i]);
-		Bson category = Bson(["$in" : Bson(cats)]);
-		Bson[string] query = ["query" : Bson(["category" : category]), "orderby" : Bson(["_id" : Bson(-1)])];
+		Bson[string] query = ["query" : Bson(["isPublic": Bson(true)]), "orderby" : Bson(["_id" : Bson(-1)])];
 		foreach( idx, post; m_posts.find(query, null, QueryFlags.None, nskip) ){
 			if( !del(idx, Post.fromBson(post)) )
 				break;
 		}
 	}
 
-	void getPublicPostsForCategory(string[] categories, int nskip, bool delegate(size_t idx, Post post) del)
-	{
-		auto cats = new Bson[categories.length];
-		foreach( i; 0 .. categories.length ) cats[i] = Bson(categories[i]);
-		Bson category = Bson(["$in" : Bson(cats)]);
-		Bson[string] query = ["query" : Bson(["category" : category, "isPublic": Bson(true)]), "orderby" : Bson(["_id" : Bson(-1)])];
-		foreach( idx, post; m_posts.find(query, null, QueryFlags.None, nskip) ){
-			if( !del(idx, Post.fromBson(post)) )
-				break;
-		}
-	}
+    int countAllPosts() {
+        int cnt;
+        getAllPosts(0, (size_t idx, Post post) { if(post.isPublic) {cnt++; return true;} return false; } ); 
+        return cnt;
+    }
 
 	void getAllPosts(int nskip, bool delegate(size_t idx, Post post) del)
 	{

@@ -15,7 +15,6 @@ class Post {
 	bool commentsAllowed;
 	string slug; // url entity to identify this post - generated from the header by default
 	string author;  // user name
-	string category; // can be hierarchical using dotted.syntax.format
 	SysTime date;
 	string header;
 	string subHeader;
@@ -40,7 +39,6 @@ class Post {
 		ret.commentsAllowed = cast(bool)bson["commentsAllowed"];
 		ret.slug = cast(string)bson["slug"];
 		ret.author = cast(string)bson["author"];
-		ret.category = cast(string)bson["category"];
 		ret.date = SysTime.fromISOExtString(cast(string)bson["date"]);
 		ret.header = cast(string)bson["header"];
 		ret.subHeader = cast(string)bson["subHeader"];
@@ -63,7 +61,6 @@ class Post {
 		ret["commentsAllowed"] = Bson(commentsAllowed);
 		ret["slug"] = Bson(slug);
 		ret["author"] = Bson(author);
-		ret["category"] = Bson(category);
 		ret["date"] = Bson(date.toISOExtString());
 		ret["header"] = Bson(header);
 		ret["subHeader"] = Bson(subHeader);
