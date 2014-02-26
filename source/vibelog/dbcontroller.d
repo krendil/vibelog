@@ -11,15 +11,18 @@ import vibe.mail.smtp;
 import vibe.stream.memory;
 import vibe.templ.diet;
 
+import std.datetime;
 import std.exception;
 import std.variant;
 
+import core.time;
 
 class DBController {
 	private {
 		MongoCollection m_users;
 		MongoCollection m_posts;
 		MongoCollection m_comments;
+        MongoCollection m_tokens;
 	}
 
 	this(string host, ushort port, string dbname)
@@ -28,6 +31,7 @@ class DBController {
 		m_users = db["users"];
 		m_posts = db["posts"];
 		m_comments = db["comments"];
+        m_tokens = db["tokens"];
 
 		// Upgrade post contained comments to their collection
 		foreach( p; m_posts.find(["comments": ["$exists": true]], ["comments": 1]) ){
@@ -227,4 +231,56 @@ class DBController {
 	{
 		m_posts.remove(["postId": Bson(post_id), "isPublic": Bson(false)]);
 	}
+
+    void setTokenTTL(Duration ttl) {
+        m_tokens.setTTLIndex( [ "created" : 1 ], ttl.seconds );
+    }
+
+    void addAuthToken(string username, string token) {
+        //hash token
+        string hash = generateSimplePasswordHash(token);
+        //store in the db
+        Bson doc;
+
+        doc["created"] = BsonDate(Clock.currTime);
+        doc["username"] = username;
+        doc["tokenhash"] = hash;
+        m_tokens.insert(doc);
+    }
+
+    bool checkAuthToken(string username, string token)
+    {
+        string hash = generateSimplePasswordHash(token);
+        auto results = m_tokens.find(["username" : username, "tokenhash" : hash]);
+        return !results.empty;
+    }
+}
+
+private void setTTLIndex(
+        MongoCollection coll, int[string] fieldOrders,
+        long ttl, IndexFlags flags = IndexFlags.None) 
+{
+    auto indexname = appender!string();
+    bool first = true;
+    foreach( f, d; fieldOrders ) {
+        if( !first ) indexname.put('_');
+        else first = false;
+        indexname.put(f);
+        indexname.put('_');
+        indexname.put(to!string(d));
+    }
+
+    import std.string: format;
+
+    Bson[string] doc;
+    doc["v"] = 1;
+    doc["key"] = serializeToBson(fieldOrders);
+    doc["ns"] = format("%s.%s", coll.database.name, coll.name);
+    doc["name"] = indexname.data;
+    if( flags & IndexFlags.Unique ) doc["unique"] = true;
+    if( flags & IndexFlags.DropDuplicates ) doc["dropDups"] = true;
+    if( flags & IndexFlags.Background ) doc["background"] = true;
+    if( flags & IndexFlags.Sparse ) doc["sparse"] = true;
+    doc["expireAfterSeconds"] = ttl;
+    coll.database["system.indexes"].insert(doc);
 }

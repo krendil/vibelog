@@ -7,6 +7,7 @@ import vibe.core.log;
 import vibe.crypto.passwordhash;
 import vibe.db.mongo.connection;
 import vibe.http.auth.basic_auth;
+import vibe.http.client;
 import vibe.http.router;
 import vibe.inet.url;
 import vibe.templ.diet;
@@ -15,6 +16,10 @@ import std.conv;
 import std.datetime;
 import std.exception;
 import std.string;
+
+debug {
+    import std.stdio;
+}
 
 class VibeLogSettings {
 	string databaseHost = "localhost";
@@ -76,6 +81,11 @@ class VibeLog(alias config) {
 		router.post(m_subPath ~ "posts/:postname/set_comment_public", auth(&setCommentPublic));
 		router.get(m_subPath ~ "make_post",                   auth(&showMakePost));
 		router.post(m_subPath ~ "make_post",                  auth(&putPost));
+
+        //
+        // IndieAuth redirect location
+        //
+        router.get(m_subPath ~ "authed/:path",                &authed);
 	}
 
 	int getPageCount()
@@ -452,4 +462,26 @@ class VibeLog(alias config) {
 		}
 		res.redirect(m_subPath~"posts/");
 	}
+
+
+    protected void authed(HTTPServerRequest req, HTTPServerResponse res) {
+        //Authenticate token with IndieAuth
+        string token = req.query["token"];
+        string me = req.query["me"];
+        HTTPClientResponse verRes = requestHTTP(
+                format("https://indieauth.com/verify?token=%s", token),
+                (scope HTTPClientRequest req) {
+                    req.method = HTTPMethod.GET;
+                });
+
+        Json result = verRes.readJson();
+        if(result["me"] == me) {
+            logInfo("Authenticated as %s with token %s", me, token);
+        } else {
+            logWarn("Authentication failed for %s token %s", me, token);
+        }
+        //Store token
+        //Redirect to site
+        res.redirect("/"~req.params["path"]);
+    }
 }
