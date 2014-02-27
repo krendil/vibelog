@@ -4,6 +4,7 @@ import vibelog.dbcontroller;
 import vibelog.rss;
 
 import vibe.core.log;
+import vibe.crypto.cryptorand;
 import vibe.crypto.passwordhash;
 import vibe.db.mongo.connection;
 import vibe.http.auth.basic_auth;
@@ -12,10 +13,12 @@ import vibe.http.router;
 import vibe.inet.url;
 import vibe.templ.diet;
 
+import std.base64;
 import std.conv;
 import std.datetime;
 import std.exception;
 import std.string;
+import std.typecons;
 
 debug {
     import std.stdio;
@@ -86,6 +89,10 @@ class VibeLog(alias config) {
         // IndieAuth redirect location
         //
         router.get(m_subPath ~ "authed/:path",                &authed);
+        router.get(m_subPath ~ "authed/",        (scope HTTPServerRequest req, scope HTTPServerResponse res) {
+                                                                req.params["path"] = "/";
+                                                                authed(req, res);
+                                                                });
 	}
 
 	int getPageCount()
@@ -255,6 +262,13 @@ class VibeLog(alias config) {
 			string username = performBasicAuth(req, res, "VibeLog admin area", &testauth);
 			auto pusr = username in users;
 			assert(pusr, "Authorized with unknown username !?");
+
+            if("auth" in res.cookies) {
+                string[] creds = split(res.cookies["auth"].value, ";");
+                bool tokenOk = m_db.checkAuthToken(creds[0], creds[1]);
+                logInfo("Authentication for user %s %s", creds[0], tokenOk ? "successful" : "failed");
+            }
+
 			del(req, res, users, *pusr);
 		};
 	}
@@ -479,9 +493,40 @@ class VibeLog(alias config) {
             logInfo("Authenticated as %s with token %s", me, token);
         } else {
             logWarn("Authentication failed for %s token %s", me, token);
+            logWarn("IndieAuth returned %s", result.toString());
+            res.redirect("/"~req.params["path"], 401);
+            return;
         }
         //Store token
+            //Generate token
+        ubyte[8] rawToken;
+        auto rng = scoped!SystemRNG();
+        rng.read(rawToken);
+        string newToken = Base64.encode(rawToken).assumeUnique;
+
+            //Store token
+        Cookie authCookie;
+        with(authCookie) {
+            domain = req.host;
+            httpOnly = true;
+            expires = (Clock.currTime(UTC()) + config.sessionLength.days()).toCookieString();
+            value = format("%s;%s", me, newToken);
+        }
+        res.cookies["auth"] = authCookie;
+
+        m_db.addAuthToken(me, newToken);
+        logInfo("Generated session token for %s: %s", me, newToken);
+
         //Redirect to site
-        res.redirect("/"~req.params["path"]);
+        res.redirect("/"~req.params["path"], 303);
     }
+}
+
+private string toCookieString(SysTime time) {
+    enum string[7] dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    enum string[13] monthNames = ["ERR", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return format("%s, %s %s %s %s:%s:%s GMT",
+            dayNames[time.dayOfWeek], time.day, monthNames[time.month], time.year,
+            time.hour, time.minute, time.second);
+
 }
