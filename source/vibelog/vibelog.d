@@ -93,6 +93,8 @@ class VibeLog(alias config) {
                                                                 req.params["path"] = "/";
                                                                 authed(req, res);
                                                                 });
+
+        m_tokens.setTTLIndex(["expires" : 1], days(config.sessionLength).seconds());
 	}
 
 	int getPageCount()
