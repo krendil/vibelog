@@ -11,6 +11,8 @@ import vibe.mail.smtp;
 import vibe.stream.memory;
 import vibe.templ.diet;
 
+import std.algorithm;
+import std.array;
 import std.datetime;
 import std.exception;
 import std.variant;
@@ -233,14 +235,14 @@ class DBController {
 	}
 
     void setTokenTTL(Duration ttl) {
-        m_tokens.setTTLIndex( [ "created" : 1 ], ttl.seconds );
+        m_tokens.setTTLIndex( [ "created" : 1 ], ttl.total!"seconds" );
     }
 
     void addAuthToken(string username, string token) {
         //hash token
         string hash = generateSimplePasswordHash(token);
         //store in the db
-        Bson doc;
+        Bson doc = Bson.emptyObject();
 
         doc["created"] = BsonDate(Clock.currTime);
         doc["username"] = username;
@@ -250,9 +252,10 @@ class DBController {
 
     bool checkAuthToken(string username, string token)
     {
-        string hash = generateSimplePasswordHash(token);
-        auto results = m_tokens.find(["username" : username, "tokenhash" : hash]);
-        return !results.empty;
+        auto results = m_tokens.find(["username" : username]);
+        return results
+            .map!( bson => (testSimplePasswordHash(bson["tokenhash"].get!string(), token)) )
+            .any!("a");
     }
 }
 

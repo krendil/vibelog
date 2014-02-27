@@ -90,7 +90,7 @@ class VibeLog(alias config) {
         //
         router.get(m_subPath ~ "authed/:path",                &authed);
         router.get(m_subPath ~ "authed/",        (scope HTTPServerRequest req, scope HTTPServerResponse res) {
-                                                                req.params["path"] = "/";
+                                                                req.params["path"] = "";
                                                                 authed(req, res);
                                                                 });
 
@@ -265,10 +265,12 @@ class VibeLog(alias config) {
 			auto pusr = username in users;
 			assert(pusr, "Authorized with unknown username !?");
 
-            if("auth" in res.cookies) {
-                string[] creds = split(res.cookies["auth"].value, ";");
+            if("auth" in req.cookies) {
+                string[] creds = split(req.cookies["auth"], ";");
                 bool tokenOk = m_db.checkAuthToken(creds[0], creds[1]);
                 logInfo("Authentication for user %s %s", creds[0], tokenOk ? "successful" : "failed");
+            } else {
+                logInfo("Authcookie not found");
             }
 
 			del(req, res, users, *pusr);
@@ -484,6 +486,7 @@ class VibeLog(alias config) {
         //Authenticate token with IndieAuth
         string token = req.query["token"];
         string me = req.query["me"];
+        /+
         HTTPClientResponse verRes = requestHTTP(
                 format("https://indieauth.com/verify?token=%s", token),
                 (scope HTTPClientRequest req) {
@@ -499,6 +502,7 @@ class VibeLog(alias config) {
             res.redirect("/"~req.params["path"], 401);
             return;
         }
+        +/
         //Store token
             //Generate token
         ubyte[8] rawToken;
@@ -507,9 +511,10 @@ class VibeLog(alias config) {
         string newToken = Base64.encode(rawToken).assumeUnique;
 
             //Store token
-        Cookie authCookie;
+        Cookie authCookie = new Cookie();
         with(authCookie) {
             domain = req.host;
+            path = "/";
             httpOnly = true;
             expires = (Clock.currTime(UTC()) + config.sessionLength.days()).toCookieString();
             value = format("%s;%s", me, newToken);
@@ -520,7 +525,7 @@ class VibeLog(alias config) {
         logInfo("Generated session token for %s: %s", me, newToken);
 
         //Redirect to site
-        res.redirect("/"~req.params["path"], 303);
+        res.redirect(format("%s/%s", req.host, req.params["path"]), 303);
     }
 }
 
