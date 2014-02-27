@@ -285,5 +285,23 @@ private void setTTLIndex(
     if( flags & IndexFlags.Background ) doc["background"] = true;
     if( flags & IndexFlags.Sparse ) doc["sparse"] = true;
     doc["expireAfterSeconds"] = ttl;
+
+    if(!coll.database["system.indexes"].find(Bson([ "name" : doc["name"] ])).empty) {
+        coll.dropIndexes(indexname.data);
+    }
     coll.database["system.indexes"].insert(doc);
+}
+
+private Bson dropIndexes(MongoCollection coll, string name) 
+{
+    debug import std.stdio;
+
+    auto cmd =  Bson.emptyObject();
+    cmd["dropIndexes"] = coll.name;
+    cmd["index"] = name;
+    debug writeln(cmd);
+
+    auto res = coll.database.runCommand(cmd);
+    debug writeln(res);
+    return res;
 }

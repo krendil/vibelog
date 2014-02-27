@@ -486,7 +486,7 @@ class VibeLog(alias config) {
         //Authenticate token with IndieAuth
         string token = req.query["token"];
         string me = req.query["me"];
-        /+
+
         HTTPClientResponse verRes = requestHTTP(
                 format("https://indieauth.com/verify?token=%s", token),
                 (scope HTTPClientRequest req) {
@@ -499,10 +499,10 @@ class VibeLog(alias config) {
         } else {
             logWarn("Authentication failed for %s token %s", me, token);
             logWarn("IndieAuth returned %s", result.toString());
-            res.redirect("/"~req.params["path"], 401);
+            res.redirect(format("http://%s/%s", req.host, req.params["path"]), 401);
             return;
         }
-        +/
+
         //Store token
             //Generate token
         ubyte[8] rawToken;
@@ -525,7 +525,7 @@ class VibeLog(alias config) {
         logInfo("Generated session token for %s: %s", me, newToken);
 
         //Redirect to site
-        res.redirect(format("%s/%s", req.host, req.params["path"]), 303);
+        res.redirect(format("http://%s/%s", req.host, req.params["path"]), 303);
     }
 }
 
