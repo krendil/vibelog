@@ -16,7 +16,7 @@ block body
 		p
 			a(href='#{post?"../":"manage"}') Cancel
 
-		- if( !post || post.author == loginUser.username || loginUser.isPostAdmin() )
+		- if( !post || post.author == loginUser.username )
 			form(action='#{post?"put":"make_post"}', method="POST")
 				input(type="hidden", name="id", value="#{post ? post.id.toString() : null}")
 				table.blind

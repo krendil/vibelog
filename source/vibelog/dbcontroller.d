@@ -57,9 +57,7 @@ class DBController {
 		if( ret.length == 0 ){
 			auto initial_admin = new User;
 			initial_admin.username = "admin";
-			initial_admin.password = generateSimplePasswordHash("admin");
 			initial_admin.name = "Default Administrator";
-			initial_admin.groups ~= "admin";
 			m_users.insert(initial_admin);
 			ret["admin"] = initial_admin;
 		}
@@ -84,6 +82,12 @@ class DBController {
 		//auto userbson = m_users.findOne(Bson(["name" : Bson(name)]));
 		return User.fromBson(userbson);
 	}
+
+    bool userExists(string name)
+    {
+        auto userbson = m_users.findOne(["username": Bson(name)]);
+        return !userbson.isNull();
+    }
 
 	BsonObjectID addUser(User user)
 	{
@@ -190,38 +194,12 @@ class DBController {
 		return m_comments.count(["postId": Bson(post_id), "isPublic": Bson(true)]);
 	}
 
-
 	void addComment(BsonObjectID post_id, Comment comment)
 	{
 		Bson cmtbson = comment.toBson();
 		comment.id = BsonObjectID.generate();
 		comment.postId = post_id;
 		m_comments.insert(comment.toBson());
-
-		try {
-			auto p = m_posts.findOne(["_id": post_id]);
-			auto u = m_users.findOne(["username": p.author]);
-			auto msg = new MemoryOutputStream;
-
-			auto post = Post.fromBson(p);
-
-			parseDietFileCompat!("mail.new_comment.dt",
-				Comment, "comment",
-				Post, "post")(msg, Variant(comment), Variant(post));
-
-			auto mail = new Mail;
-			mail.headers["From"] = comment.authorName ~ " <" ~ comment.authorMail ~ ">";
-			mail.headers["To"] = u.email.get!string;
-			mail.headers["Subject"] = "[VibeLog] New comment";
-			mail.headers["Content-Type"] = "text/html";
-			mail.bodyText = cast(string)msg.data();
-
-			auto settings = new SMTPClientSettings;
-			//settings.host = m_settings.mailServer;
-			sendMail(settings, mail);
-		} catch(Exception e){
-			logWarn("Failed to send comment mail: %s", e.msg);
-		}
 	}
 
 	void setCommentPublic(BsonObjectID comment_id, bool is_public)

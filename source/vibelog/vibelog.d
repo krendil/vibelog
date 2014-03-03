@@ -12,6 +12,7 @@ import vibe.http.client;
 import vibe.http.router;
 import vibe.inet.url;
 import vibe.templ.diet;
+import vibe.textfilter.urlencode;
 
 import std.base64;
 import std.conv;
@@ -255,9 +256,15 @@ class VibeLog(alias config) {
                 string[] creds = split(req.cookies["auth"], ";");
                 bool tokenOk = m_db.checkAuthToken(creds[0], creds[1]);
                 logInfo("Authentication for user %s %s", creds[0], tokenOk ? "successful" : "failed");
-                User user = new User();
-                user.username = creds[0];
-                del(req, res, user);
+
+                if(creds[0] == config.author) {
+                    User user = new User();
+                    user.username = creds[0];
+                    del(req, res, user);
+                } else {
+                    showNothingToDo(req, res, creds[0]);
+                }
+
             } else {
                 logInfo("Authcookie not found");
                 showLogin(req, res);
@@ -270,6 +277,15 @@ class VibeLog(alias config) {
                 HTTPServerRequest, "req",
                 typeof(config), "config")
             (req, config);
+
+    }
+
+    protected void showNothingToDo(HTTPServerRequest req, HTTPServerResponse res, string user) {
+        res.renderCompat!("vibelog.nothing.dt",
+                HTTPServerRequest, "req",
+                typeof(config), "config",
+                string, "user")
+            (req, config, user);
 
     }
 
@@ -288,7 +304,7 @@ class VibeLog(alias config) {
 
 	protected void showUserEdit(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
-		User user = m_db.getUser(req.params["username"]);
+		User user = m_db.getUser(urlDecode(req.params["username"]));
 		res.renderCompat!("vibelog.edituser.dt",
 			HTTPServerRequest, "req",
             typeof(config), "config",
@@ -302,31 +318,17 @@ class VibeLog(alias config) {
 		auto id = req.form["id"];
 		User usr;
 		if( id.length > 0 ){
-			enforce(loginUser.isUserAdmin() || req.form["username"] == loginUser.username,
+			enforce(loginUser.username == config.author || req.form["username"] == loginUser.username,
 				"You can only change your own account.");
 			usr = m_db.getUser(BsonObjectID.fromHexString(id));
 			enforce(usr.username == req.form["username"], "Cannot change the user name!");
 		} else {
-			enforce(loginUser.isUserAdmin(), "You are not allowed to add users.");
+			enforce(loginUser.username == config.author, "You are not allowed to add users.");
 			usr = new User;
 			usr.username = req.form["username"];
 		}
-		enforce(req.form["password"] == req.form["passwordConfirmation"], "Passwords do not match!");
 
 		usr.name = req.form["name"];
-
-		if( req.form["password"].length || req.form["passwordConfirmation"].length ){
-			enforce(loginUser.isUserAdmin() || testSimplePasswordHash(req.form["oldPassword"], usr.password), "Old password does not match.");
-			usr.password = generateSimplePasswordHash(req.form["password"]);
-		}
-
-		if( loginUser.isUserAdmin() ){
-			usr.groups = null;
-			foreach( k, v; req.form ){
-				if( k.startsWith("group_") )
-					usr.groups ~= k[6 .. $];
-			}
-		}
 
 		if( id.length > 0 ){
 			m_db.modifyUser(usr);
@@ -334,8 +336,7 @@ class VibeLog(alias config) {
 			usr._id = m_db.addUser(usr);
 		}
 
-		if( loginUser.isUserAdmin() ) res.redirect(m_subPath~"users/");
-		else res.redirect(m_subPath~"manage");
+		res.redirect(m_subPath~"manage");
 	}
 
 	//
@@ -346,7 +347,7 @@ class VibeLog(alias config) {
 	{
 		Post[] posts;
 		m_db.getAllPosts(0, (size_t idx, Post post){
-			if( loginUser.isPostAdmin() || post.author == loginUser.username )
+			if( post.author == loginUser.username )
 			{
 				posts ~= post;
 			}
@@ -457,6 +458,14 @@ class VibeLog(alias config) {
             return;
         }
 
+        //Create user (if they don't exist)
+        if( !m_db.userExists(me) ) {
+            User usr = new User();
+            usr.username = me;
+            usr.name = me;
+            m_db.addUser(usr);
+        }
+
         //Store token
             //Generate token
         ubyte[8] rawToken;
@@ -479,8 +488,10 @@ class VibeLog(alias config) {
         logInfo("Generated session token for %s: %s", me, newToken);
 
         //Redirect to site
+        //Use absolute url, because some user agents will think they are still at indieauth
         res.redirect(format("http://%s/%s", req.host, req.params["path"]), 303);
     }
+
 }
 
 private string toCookieString(SysTime time) {
@@ -489,5 +500,4 @@ private string toCookieString(SysTime time) {
     return format("%s, %s %s %s %s:%s:%s GMT",
             dayNames[time.dayOfWeek], time.day, monthNames[time.month], time.year,
             time.hour, time.minute, time.second);
-
 }

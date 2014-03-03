@@ -23,7 +23,7 @@ block body
 				th Edit
 				th Delete
 			- foreach( post; posts )
-				-if( loginUser.isPostAdmin() || loginUser.username == post.author )
+				-if( loginUser.username == post.author )
 					tr
 						td= (cast(Date)post.date).toSimpleString()
 						td= post.isPublic ? "yes" : ""

@@ -2,6 +2,7 @@ extends layout
 
 block title
 	- auto title = "VibeLog Admin Panel";
+	- import vibe.textfilter.urlencode;
 	
 block body
 	#vibelogContent
@@ -10,16 +11,11 @@ block body
 		section#actions.vibelogAdminSection
 			h2 Actions
 			ul
+				- if( loginUser.username == config.author )
+					li
+						a(href="make_post") New post
+					li
+						a(href="posts/") Manage posts
 				li
-					a(href="make_post") New post
-				li
-					a(href="posts/") Manage posts
-				- if( loginUser.isConfigAdmin() )
-					li
-						a(href="configs/") Manage configurations
-				- if( loginUser.isUserAdmin() )
-					li
-						a(href="users/") Manage users
-				- else
-					li
-						a(href="users/#{loginUser.username}/edit") Manage account
+					- //Double encode so as not to confuse URLRouter with decoded slashes
+					a(href="users/#{urlEncode(urlEncode(loginUser.username))}/edit") Manage account

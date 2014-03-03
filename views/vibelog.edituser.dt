@@ -19,17 +19,4 @@ block body
 			p
 				label(for="name") Full name
 				input(type="text", name="name", value="#{user.name}")
-			p
-				label(for="email") Email
-				input(type="email", name="email", value="#{user.email}")
-			- if( !loginUser.isUserAdmin() )
-				p
-					label(for="oldPassword") Current Password
-					input(type="password", name="oldPassword", value="")
-			p
-				label(for="password") New Password
-				input(type="password", name="password", value="")
-			p
-				label(for="passwordConfirmation") Confim new password
-				input(type="password", name="passwordConfirmation", value="")
 			input(type="submit", value="Apply changes")
