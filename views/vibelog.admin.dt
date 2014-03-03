@@ -17,5 +17,5 @@ block body
 					li
 						a(href="posts/") Manage posts
 				li
-					- //Double encode so as not to confuse URLRouter with decoded slashes
+					// Double encode so as not to confuse URLRouter with decoded slashes
 					a(href="users/#{urlEncode(urlEncode(loginUser.username))}/edit") Manage account
