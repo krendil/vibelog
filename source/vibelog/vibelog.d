@@ -71,11 +71,8 @@ class VibeLog(alias config) {
 		//
 		router.get(m_subPath ~ "manage",                      auth(&showAdminPanel));
 
-		router.get(m_subPath ~ "users/",                      auth(&showUserList));
 		router.get(m_subPath ~ "users/:username/edit",        auth(&showUserEdit));
 		router.post(m_subPath ~ "users/:username/put",        auth(&putUser));
-		router.post(m_subPath ~ "users/:username/delete",     auth(&deleteUser));
-		router.post(m_subPath ~ "add_user",                   auth(&addUser));
 
 		router.get(m_subPath ~ "posts/",                      auth(&showEditPosts));
 		router.get(m_subPath ~ "posts/:postname/edit",        auth(&showEditPost));
@@ -250,58 +247,46 @@ class VibeLog(alias config) {
 		res.bodyWriter.flush();
 	}
 
-	protected HTTPServerRequestDelegate auth(void delegate(HTTPServerRequest, HTTPServerResponse, User[string], User) del)
+	protected HTTPServerRequestDelegate auth(void delegate(HTTPServerRequest, HTTPServerResponse, User) del)
 	{
 		return (HTTPServerRequest req, HTTPServerResponse res)
 		{
-			User[string] users = m_db.getAllUsers();
-			bool testauth(string user, string password)
-			{
-				auto pu = user in users;
-				if( pu is null ) return false;
-				return testSimplePasswordHash(pu.password, password);
-			}
-			string username = performBasicAuth(req, res, "VibeLog admin area", &testauth);
-			auto pusr = username in users;
-			assert(pusr, "Authorized with unknown username !?");
-
             if("auth" in req.cookies) {
                 string[] creds = split(req.cookies["auth"], ";");
                 bool tokenOk = m_db.checkAuthToken(creds[0], creds[1]);
                 logInfo("Authentication for user %s %s", creds[0], tokenOk ? "successful" : "failed");
+                User user = new User();
+                user.username = creds[0];
+                del(req, res, user);
             } else {
                 logInfo("Authcookie not found");
+                showLogin(req, res);
             }
-
-			del(req, res, users, *pusr);
 		};
 	}
 
-	protected void showAdminPanel(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+    protected void showLogin(HTTPServerRequest req, HTTPServerResponse res) {
+        res.renderCompat!("vibelog.login.dt",
+                HTTPServerRequest, "req",
+                typeof(config), "config")
+            (req, config);
+
+    }
+
+	protected void showAdminPanel(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		res.renderCompat!("vibelog.admin.dt",
 			HTTPServerRequest, "req",
             typeof(config), "config",
-			User[string], "users",
 			User, "loginUser")
-			(req, config, users, loginUser);
+			(req, config, loginUser);
 	}
 
 	//
 	// Users
 	//
 
-	protected void showUserList(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		res.renderCompat!("vibelog.edituserlist.dt",
-			HTTPServerRequest, "req",
-            typeof(config), "config",
-			User, "loginUser",
-			User[string], "users")
-			(req, config, loginUser, users);
-	}
-
-	protected void showUserEdit(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void showUserEdit(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		User user = m_db.getUser(req.params["username"]);
 		res.renderCompat!("vibelog.edituser.dt",
@@ -312,7 +297,7 @@ class VibeLog(alias config) {
 			(req, config, loginUser, user);
 	}
 
-	protected void putUser(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void putUser(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		auto id = req.form["id"];
 		User usr;
@@ -325,13 +310,10 @@ class VibeLog(alias config) {
 			enforce(loginUser.isUserAdmin(), "You are not allowed to add users.");
 			usr = new User;
 			usr.username = req.form["username"];
-			foreach( u; users )
-				enforce(u.username != usr.username, "A user with the specified user name already exists!");
 		}
 		enforce(req.form["password"] == req.form["passwordConfirmation"], "Passwords do not match!");
 
 		usr.name = req.form["name"];
-		usr.email = req.form["email"];
 
 		if( req.form["password"].length || req.form["passwordConfirmation"].length ){
 			enforce(loginUser.isUserAdmin() || testSimplePasswordHash(req.form["oldPassword"], usr.password), "Old password does not match.");
@@ -356,36 +338,11 @@ class VibeLog(alias config) {
 		else res.redirect(m_subPath~"manage");
 	}
 
-	protected void deleteUser(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		enforce(loginUser.isUserAdmin(), "You are not authorized to delete users!");
-		enforce(loginUser.username != req.params["username"], "Cannot delete the own user account!");
-		foreach( usr; users )
-			if( usr.username == req.params["username"] ){
-				m_db.deleteUser(usr._id);
-				res.redirect(m_subPath ~ "users/");
-				return;
-			}
-		enforce(false, "Unknown user name.");
-	}
-
-	protected void addUser(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
-	{
-		enforce(loginUser.isUserAdmin(), "You are not authorized to add users!");
-		string uname = req.form["username"];
-		if( uname !in users ){
-			auto u = new User;
-			u.username = uname;
-			m_db.addUser(u);
-		}
-		res.redirect(m_subPath ~ "users/" ~ uname ~ "/edit");
-	}
-
 	//
 	// Posts
 	//
 
-	protected void showEditPosts(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void showEditPosts(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		Post[] posts;
 		m_db.getAllPosts(0, (size_t idx, Post post){
@@ -400,55 +357,52 @@ class VibeLog(alias config) {
 		res.renderCompat!("vibelog.editpostslist.dt",
 			HTTPServerRequest, "req",
             typeof(config), "config",
-			User[string], "users",
 			User, "loginUser",
 			Post[], "posts")
-			(req, config, users, loginUser, posts);
+			(req, config, loginUser, posts);
 	}
 
-	protected void showMakePost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void showMakePost(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		Post post;
 		Comment[] comments;
 		res.renderCompat!("vibelog.editpost.dt",
 			HTTPServerRequest, "req",
             typeof(config), "config",
-			User[string], "users",
 			User, "loginUser",
 			Post, "post",
 			Comment[], "comments")
-			(req, config, users, loginUser, post, comments);
+			(req, config, loginUser, post, comments);
 	}
 
-	protected void showEditPost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void showEditPost(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		auto post = m_db.getPost(req.params["postname"]);
 		auto comments = m_db.getComments(post.id, true);
 		res.renderCompat!("vibelog.editpost.dt",
 			HTTPServerRequest, "req",
             typeof(config), "config",
-			User[string], "users",
 			User, "loginUser",
 			Post, "post",
 			Comment[], "comments")
-			(req, config, users, loginUser, post, comments);
+			(req, config, loginUser, post, comments);
 	}
 
-	protected void deletePost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void deletePost(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		auto id = BsonObjectID.fromHexString(req.form["id"]);
 		m_db.deletePost(id);
 		res.redirect(m_subPath ~ "posts/");
 	}
 
-	protected void setCommentPublic(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void setCommentPublic(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		auto id = BsonObjectID.fromHexString(req.form["id"]);
 		m_db.setCommentPublic(id, to!int(req.form["public"]) != 0);
 		res.redirect(m_subPath ~ "posts/"~req.params["postname"]~"/edit");
 	}
 
-	protected void putPost(HTTPServerRequest req, HTTPServerResponse res, User[string] users, User loginUser)
+	protected void putPost(HTTPServerRequest req, HTTPServerResponse res, User loginUser)
 	{
 		auto id = req.form["id"];
 		Post p;

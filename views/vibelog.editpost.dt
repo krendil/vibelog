@@ -38,20 +38,10 @@ block body
 							- else
 								input#commentsAllowed.checkbox(type="checkbox", name="commentsAllowed", value="yes")
 					tr
-						- if( loginUser.isPostAdmin() )
-							td
-								label(for="author") Author
-							td
-								select#author(name="author", size="1")
-									- foreach( usr; users )
-										- if( usr.username == (post ? post.author : loginUser.username) )
-											option(value="#{usr.username}", selected) #{usr.name} (#{usr.username})
-										- else
-											option(value="#{usr.username}") #{usr.name} (#{usr.username})
-						- else
-							td Author
-							td #{loginUser.name} (#{loginUser.username})
-								input(type="hidden", name="author", value="#{loginUser.username}")
+						td
+							Author
+						td #{loginUser.name} (#{loginUser.username})
+							input(type="hidden", name="author", value="#{loginUser.username}")
 					tr
 						td
 							label(for="date") Date
