@@ -145,7 +145,8 @@ class VibeLog(alias config) {
 	{
 		struct ShowPostListInfo {
 			string rootDir;
-			User[string] users;
+            string author;
+            string authorName;
 			string function(string)[] textFilters;
 			int pageNumber = 0;
 			int pageCount;
@@ -156,7 +157,8 @@ class VibeLog(alias config) {
 		
 		ShowPostListInfo info;
 		info.rootDir = m_subPath; // TODO: use relative path
-		info.users = m_db.getAllUsers();
+        info.author = config.author;
+        info.authorName = m_db.getUser(config.author).name;
 		info.textFilters = m_settings.textFilters;
 		info.pageCount = getPageCount();
 		if( auto pp = "page" in req.query ) info.pageNumber = to!int(*pp)-1;
@@ -176,7 +178,8 @@ class VibeLog(alias config) {
 	{
 		struct ShowPostInfo {
 			string rootDir;
-			User[string] users;
+            string author;
+            string authorName;
 			string function(string)[] textFilters;
 			Post post;
 			Comment[] comments;
@@ -185,7 +188,8 @@ class VibeLog(alias config) {
 
 		ShowPostInfo info;
 		info.rootDir = m_subPath; // TODO: use relative path
-		info.users = m_db.getAllUsers();
+        info.author = config.author;
+        info.authorName = m_db.getUser(config.author).name;
 		info.textFilters = m_settings.textFilters;
 		try info.post = m_db.getPost(req.params["postname"]);
 		catch(Exception e){ return; } // -> gives 404 error
