@@ -80,7 +80,7 @@ class Post {
 
 	string renderContentAsHtml(string function(string)[] filters)
 	const {
-		auto html = filterMarkdown(content);
+        string html = content;
 		foreach( flt; filters )
 			html = flt(html);
 		return html;
